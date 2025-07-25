@@ -1,9 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
+﻿using System.Numerics;
 using System.Security.Cryptography;
-using System.Text;
 using Org.BouncyCastle.Crypto.Digests;
 using Org.BouncyCastle.Crypto.Macs;
 using Org.BouncyCastle.Crypto.Parameters;
@@ -11,7 +7,6 @@ using Spectre.Console;
 
 namespace NonTransitiveDiceGame
 {
-    // ============================ DOMAIN ============================
     public sealed class Die
     {
         private readonly int[] _faces;
@@ -27,7 +22,6 @@ namespace NonTransitiveDiceGame
         public override string ToString() => string.Join(',', _faces);
     }
 
-    // ======================= PARSING & VALIDATION ===================
     public static class DiceSetParser
     {
         public static IReadOnlyList<Die> Parse(string[] args)
@@ -65,7 +59,6 @@ namespace NonTransitiveDiceGame
         public UserInputException(string message, string? example = null) : base(message) => Example = example;
     }
 
-    // =========================== CRYPTO ============================
     public static class SecureRng
     {
         private static readonly RandomNumberGenerator _rng = RandomNumberGenerator.Create();
@@ -94,11 +87,9 @@ namespace NonTransitiveDiceGame
     {
         public static byte[] ComputeSha3(byte[] key, int message)
         {
-            // message as 4-byte little-endian for simplicity
             Span<byte> msg = stackalloc byte[4];
             BitConverter.TryWriteBytes(msg, message);
             var msgBytes = BitConverter.GetBytes(message);
-            // In .NET 8+, we could use HMAC<SHA3_256> but it's not yet in BCL; rely on BouncyCastle.
             var digest = new Sha3Digest(256);
             var hmac = new HMac(digest);
             hmac.Init(new KeyParameter(key));
@@ -110,7 +101,6 @@ namespace NonTransitiveDiceGame
         public static string ToHex(byte[] bytes) => Convert.ToHexString(bytes);
     }
 
-    // =============== FAIR RANDOM GENERATION PROTOCOL ===============
     public class FairRandomProtocol
     {
         private readonly int _rangeInclusive;
@@ -119,26 +109,21 @@ namespace NonTransitiveDiceGame
         public int Execute(string prompt)
         {
             int rangeSize = _rangeInclusive + 1;
-            // 1-2. Computer picks x and secret key
             int x = SecureRng.NextInt(rangeSize);
-            byte[] key = SecureRng.RandomBytes(32); // 256-bit
+            byte[] key = SecureRng.RandomBytes(32);
             byte[] hmac = HmacHelper.ComputeSha3(key, x);
             AnsiConsole.MarkupLine($"[yellow]{prompt}[/]");
             AnsiConsole.MarkupLine($"I selected a random value in the range 0..{_rangeInclusive} (HMAC={HmacHelper.ToHex(hmac)}).\n");
 
-            // 4. User selects y
             int y = MenuRenderer.ReadNumber(rangeSize, "Add your number");
 
-            // 5. Calculate result
             int result = (x + y) % rangeSize;
 
-            // 6. Reveal
             AnsiConsole.MarkupLine($"My number is {x} (KEY={HmacHelper.ToHex(key)}).\nThe fair number generation result is {x} + {y} = {result} (mod {rangeSize}).\n");
             return result;
         }
     }
 
-    // ===================== PROBABILITIES ===========================
     public static class ProbabilityCalculator
     {
         public static double WinProbability(Die user, Die opponent)
@@ -164,7 +149,6 @@ namespace NonTransitiveDiceGame
         }
     }
 
-    // ========================= UI HELPERS ==========================
     public static class TableRenderer
     {
         public static void Render(double[,] probs, IReadOnlyList<Die> dice)
@@ -230,7 +214,6 @@ namespace NonTransitiveDiceGame
         }
     }
 
-    // ======================== GAME ENGINE ==========================
     public class GameEngine
     {
         private readonly IReadOnlyList<Die> _dice;
@@ -238,7 +221,6 @@ namespace NonTransitiveDiceGame
 
         public void Run()
         {
-            // Determine who picks first (0=user,1=computer)
             var firstChooser = new FairRandomProtocol(1).Execute("Let's determine who makes the first move.");
             bool userFirst = firstChooser == 0;
             AnsiConsole.MarkupLine(userFirst ? "You make the first move." : "I make the first move.");
@@ -254,7 +236,6 @@ namespace NonTransitiveDiceGame
             {
                 compDieIdx = SecureRng.NextInt(_dice.Count);
                 userDieIdx = MenuRenderer.SelectDie(_dice.Where((_, i) => i != compDieIdx).ToList(), "user");
-                // adjust selected index
                 if (userDieIdx >= compDieIdx) userDieIdx++;
             }
 
@@ -263,12 +244,10 @@ namespace NonTransitiveDiceGame
 
             AnsiConsole.MarkupLine($"You chose [green]{userDie}[/]. I chose [red]{compDie}[/].\n");
 
-            // Roll user die (user participates)
             int userIndex = new FairRandomProtocol(userDie.Sides - 1).Execute("It's time for your roll.");
             int userRoll = userDie[userIndex];
             AnsiConsole.MarkupLine($"Your roll result is {userRoll}.");
 
-            // Roll computer die (user participates)
             int compIndex = new FairRandomProtocol(compDie.Sides - 1).Execute("It's time for my roll.");
             int compRoll = compDie[compIndex];
             AnsiConsole.MarkupLine($"My roll result is {compRoll}.");
@@ -279,7 +258,6 @@ namespace NonTransitiveDiceGame
         }
     }
 
-    // =========================== ENTRY =============================
     public static class Program
     {
         public static void Main(string[] args)
